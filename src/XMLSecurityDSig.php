@@ -392,16 +392,23 @@ class XMLSecurityDSig
             switch ($algorithm) {
                 case 'http://www.w3.org/2000/09/xmldsig#enveloped-signature':
 
-                    $data = $objData->cloneNode(true);
-
-                    $document = $data;
-                    if($data->ownerDocument !== null) {
-                        $document = $data->ownerDocument;
+                    if($objData->parentNode && $objData->parentNode->localName == 'Object') {
+                        break;
                     }
 
-                    //$document->save('php://output');
+                    if($objData instanceof DOMDocument) {
+                        $data = $objData;
+                    }
+                    else {
+                        $data = $objData->ownerDocument;
+                    }
 
-                    $filterXpath = new DOMXPath($document);
+                    /** @var DOMDocument $data */
+                    $data = $data->cloneNode(true);
+
+                    //$data->save('php://output');
+
+                    $filterXpath = new DOMXPath($data);
                     $filterXpath->registerNamespace($this->prefix, self::XMLDSIGNS);
 
                     $filterQuery = "/descendant::{$this->prefixTag}Signature";
@@ -417,20 +424,22 @@ class XMLSecurityDSig
                         }
                     }
 
-                    //$document->save('php://output');
+                    //$data->save('php://output');
 
                     break;
 
                 case 'http://www.w3.org/2002/06/xmldsig-filter2':
 
-                    $data = $objData->cloneNode(true);
-
-                    $document = $data;
-                    if($data->ownerDocument !== null) {
-                        $document = $data->ownerDocument;
+                    if($objData instanceof DOMDocument) {
+                        $data = $objData;
+                    }
+                    else {
+                        $data = $objData->ownerDocument;
                     }
 
-                    $filterXpath = new DOMXPath($document);
+                    $data = $data->cloneNode(true);
+
+                    $filterXpath = new DOMXPath($data);
 
                     /** @var DOMElement $xpathNode */
                     $xpathNode = $transform->firstChild;
