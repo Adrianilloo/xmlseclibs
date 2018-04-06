@@ -399,7 +399,7 @@ class XMLSecurityDSig
                         $document = $data->ownerDocument;
                     }
 
-                    $document->save('php://output');
+                    //$document->save('php://output');
 
                     $filterXpath = new DOMXPath($document);
                     $filterXpath->registerNamespace($this->prefix, self::XMLDSIGNS);
@@ -417,7 +417,7 @@ class XMLSecurityDSig
                         }
                     }
 
-                    $document->save('php://output');
+                    //$document->save('php://output');
 
                     break;
 
