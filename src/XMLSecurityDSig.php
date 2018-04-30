@@ -144,16 +144,21 @@ class XMLSecurityDSig
     {
         if (empty($this->xPathCtx) && ! empty($this->sigNode)) {
 
-            $xpath = new DOMXPath($this->sigNode->ownerDocument);
-            $xpath->registerNamespace($this->prefixSearch, self::XMLDSIGNS);
-
-            if(!empty($this->prefix)) {
-                $xpath->registerNamespace($this->prefix, self::XMLDSIGNS);
-            }
-
-            $this->xPathCtx = $xpath;
+            $this->xPathCtx = $this->createXPathObj($this->sigNode->ownerDocument);
         }
         return $this->xPathCtx;
+    }
+
+    private function createXPathObj($document)
+    {
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace($this->prefixSearch, self::XMLDSIGNS);
+
+        if(!empty($this->prefix)) {
+            $xpath->registerNamespace($this->prefix, self::XMLDSIGNS);
+        }
+
+        return $xpath;
     }
 
     /**
@@ -448,7 +453,7 @@ class XMLSecurityDSig
 
                     $data = $data->cloneNode(true);
 
-                    $filterXpath = new DOMXPath($data);
+                    $filterXpath = $this->createXPathObj($data);
 
                     /** @var DOMElement $xpathNode */
                     $xpathNode = $transform->firstChild;
