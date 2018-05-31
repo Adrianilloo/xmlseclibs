@@ -550,7 +550,7 @@ class XMLSecurityDSig
      * @return string
      * @throws Exception
      */
-    public function processReference($refNode, $node)
+    public function processReference($refNode, $node, $options = [])
     {
         $dataObject = null;
 
@@ -582,7 +582,10 @@ class XMLSecurityDSig
                             $xPath->registerNamespace($nspf, $ns);
                         }
                     }
-                    $iDlist = '@Id="'.XPath::filterAttrValue($identifier, XPath::DOUBLE_QUOTE).'"';
+
+                    $idName = (isset($options['id_name']) ? $options['id_name'] : 'Id');
+
+                    $iDlist = '@' . $idName .'="'.XPath::filterAttrValue($identifier, XPath::DOUBLE_QUOTE).'"';
                     if (is_array($this->idKeys)) {
                         foreach ($this->idKeys AS $idKey) {
                             $iDlist .= " or @".XPath::filterAttrName($idKey).'="'.
@@ -873,7 +876,7 @@ class XMLSecurityDSig
             //$canonicalData = $this->processTransforms($refNode, $node);
         }
 
-        $canonicalData = $this->processReference($refNode, $node);
+        $canonicalData = $this->processReference($refNode, $node, $options);
 
         $digValue = $this->calculateDigest($algorithm, $canonicalData);
 
