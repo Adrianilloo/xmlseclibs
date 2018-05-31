@@ -410,7 +410,7 @@ class XMLSecurityDSig
             switch ($algorithm) {
                 case 'http://www.w3.org/2000/09/xmldsig#enveloped-signature':
 
-                    if($objData->parentNode && $objData->parentNode->localName == 'Object') {
+                    if($objData && $objData->parentNode && $objData->parentNode->localName == 'Object') {
                         break;
                     }
 
@@ -543,6 +543,74 @@ class XMLSecurityDSig
             $data = $this->canonicalizeData($data, $canonicalMethod, $arXPath, $prefixList);
         }
         return $data;
+    }
+
+    /**
+     * @param DOMElement $refNode
+     * @return string
+     * @throws Exception
+     */
+    public function processReference($refNode, $node)
+    {
+        $dataObject = null;
+
+        /*
+         * Depending on the URI, we may not want to include comments in the result
+         * See: http://www.w3.org/TR/xmldsig-core/#sec-ReferenceProcessingModel
+         */
+        $includeCommentNodes = true;
+
+        if ($uri = $refNode->getAttribute("URI")) {
+            $arUrl = parse_url($uri);
+            if (empty($arUrl['path'])) {
+                if ($identifier = $arUrl['fragment']) {
+
+                    /* This reference identifies a node with the given id by using
+                     * a URI on the form "#identifier". This should not include comments.
+                     */
+                    $includeCommentNodes = false;
+
+                    if($node instanceof DOMDocument) {
+                        $xPath = new DOMXPath($node);
+                    }
+                    else {
+                        $xPath = new DOMXPath($node->ownerDocument);
+                    }
+
+                    if ($this->idNS && is_array($this->idNS)) {
+                        foreach ($this->idNS AS $nspf => $ns) {
+                            $xPath->registerNamespace($nspf, $ns);
+                        }
+                    }
+                    $iDlist = '@Id="'.XPath::filterAttrValue($identifier, XPath::DOUBLE_QUOTE).'"';
+                    if (is_array($this->idKeys)) {
+                        foreach ($this->idKeys AS $idKey) {
+                            $iDlist .= " or @".XPath::filterAttrName($idKey).'="'.
+                                XPATH::filterAttrValue($identifier, XPAth::DOUBLE_QUOTE).'"';
+                        }
+                    }
+                    $query = '//*['.$iDlist.']';
+                    $dataObject = $xPath->query($query)->item(0);
+                } else {
+
+                    if($node instanceof DOMDocument) {
+                        $dataObject = $node;
+                    }
+                    else {
+                        $dataObject = $node->ownerDocument;
+                    }
+                }
+            }
+        } else {
+            /* This reference identifies the root node with an empty URI. This should
+             * not include comments.
+             */
+            $includeCommentNodes = false;
+
+            $dataObject = $node;
+        }
+
+        return $this->processTransforms($refNode, $dataObject, $includeCommentNodes);
     }
 
     /**
@@ -698,6 +766,7 @@ class XMLSecurityDSig
         $id_name = 'Id';
         $overwrite_id  = true;
         $force_uri = false;
+        $force_uri_value = '';
 
         if (is_array($options)) {
             $prefix = empty($options['prefix']) ? null : $options['prefix'];
@@ -705,6 +774,7 @@ class XMLSecurityDSig
             $id_name = empty($options['id_name']) ? 'Id' : $options['id_name'];
             $overwrite_id = !isset($options['overwrite']) ? true : (bool) $options['overwrite'];
             $force_uri = !isset($options['force_uri']) ? false : (bool) $options['force_uri'];
+            $force_uri_value = !isset($options['force_uri']) || is_bool($options['force_uri']) ? '' : $options['force_uri'];
         }
 
         $attname = $id_name;
@@ -725,39 +795,86 @@ class XMLSecurityDSig
                 $node->setAttributeNS($prefix_ns, $attname, $uri);
             }
             $refNode->setAttribute("URI", '#'.$uri);
-        } elseif ($force_uri) {
-            $refNode->setAttribute("URI", '');
-        }
+        } else {
+            if(isset($options['reference_id'])) {
+                $refNode->setAttribute($id_name, $options['reference_id']);
+            }
 
-        $transNodes = $this->createNewSignNode('Transforms');
-        $refNode->appendChild($transNodes);
-
-        if (is_array($arTransforms)) {
-            foreach ($arTransforms AS $transform) {
-                $transNode = $this->createNewSignNode('Transform');
-                $transNodes->appendChild($transNode);
-                if (is_array($transform) &&
-                    (! empty($transform['http://www.w3.org/TR/1999/REC-xpath-19991116'])) &&
-                    (! empty($transform['http://www.w3.org/TR/1999/REC-xpath-19991116']['query']))) {
-                    $transNode->setAttribute('Algorithm', 'http://www.w3.org/TR/1999/REC-xpath-19991116');
-                    $XPathNode = $this->createNewSignNode('XPath', $transform['http://www.w3.org/TR/1999/REC-xpath-19991116']['query']);
-                    $transNode->appendChild($XPathNode);
-                    if (! empty($transform['http://www.w3.org/TR/1999/REC-xpath-19991116']['namespaces'])) {
-                        foreach ($transform['http://www.w3.org/TR/1999/REC-xpath-19991116']['namespaces'] AS $prefix => $namespace) {
-                            $XPathNode->setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:$prefix", $namespace);
-                        }
-                    }
-                } else {
-                    $transNode->setAttribute('Algorithm', $transform);
+            if(isset($options['attributes'])) {
+                foreach($options['attributes'] as $attributeName => $attributeValue) {
+                    $refNode->setAttribute($attributeName, $attributeValue);
                 }
             }
-        } elseif (! empty($this->canonicalMethod)) {
-            $transNode = $this->createNewSignNode('Transform');
-            $transNodes->appendChild($transNode);
-            $transNode->setAttribute('Algorithm', $this->canonicalMethod);
+
+            if ($force_uri) {
+                $refNode->setAttribute("URI", $force_uri_value);
+            }
         }
 
-        $canonicalData = $this->processTransforms($refNode, $node);
+        if (is_array($arTransforms) && count($arTransforms) > 0) {
+
+            $transNodes = $this->createNewSignNode('Transforms');
+            $refNode->appendChild($transNodes);
+
+            foreach ($arTransforms AS $transformAlgorithm => $transform) {
+
+                $transNode = $this->createNewSignNode('Transform');
+                $transNodes->appendChild($transNode);
+
+                if (is_array($transform)) {
+                    switch($transformAlgorithm) {
+                        case 'http://www.w3.org/TR/1999/REC-xpath-19991116':
+                            if(! empty($transform['query'])) {
+
+                                $transNode->setAttribute('Algorithm', $transformAlgorithm);
+                                $XPathNode = $this->createNewSignNode('XPath', $transform['query']);
+                                $transNode->appendChild($XPathNode);
+                                if (! empty($transform['namespaces'])) {
+                                    foreach ($transform['namespaces'] AS $transformNamespacePrefix => $transformNamespaceValue) {
+                                        $XPathNode->setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:$transformNamespacePrefix", $transformNamespaceValue);
+                                    }
+                                }
+                            } else {
+                                $transNode->setAttribute('Algorithm', $transform);
+                            }
+                            break;
+                        case 'http://www.w3.org/2002/06/xmldsig-filter2':
+                            if(! empty($transform['query'])) {
+
+                                $transNode->setAttribute('Algorithm', $transformAlgorithm);
+                                //$XPathNode = $this->createNewSignNode('XPath', $transform['query']);
+                                $XPathNode = $this->sigNode->ownerDocument->createElement('XPath', $transform['query']);
+                                $XPathNode->setAttribute('xmlns', $transformAlgorithm);
+                                $transNode->appendChild($XPathNode);
+
+                                if (! empty($transform['namespaces'])) {
+                                    foreach ($transform['namespaces'] AS $transformNamespacePrefix => $transformNamespaceValue) {
+                                        $XPathNode->setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:$transformNamespacePrefix", $transformNamespaceValue);
+                                    }
+                                }
+
+                                if (! empty($transform['attributes']) && is_array($transform['attributes'])) {
+                                    foreach($transform['attributes'] as $attributeName => $attributeValue) {
+                                        $XPathNode->setAttribute($attributeName, $attributeValue);
+                                    }
+                                }
+                            } else {
+                                $transNode->setAttribute('Algorithm', $transform);
+                            }
+                            break;
+                    }
+                }
+                else {
+                    $transNode->setAttribute('Algorithm', $transform);
+
+                }
+            }
+
+            //$canonicalData = $this->processTransforms($refNode, $node);
+        }
+
+        $canonicalData = $this->processReference($refNode, $node);
+
         $digValue = $this->calculateDigest($algorithm, $canonicalData);
 
         $digestMethod = $this->createNewSignNode('DigestMethod');
@@ -1066,6 +1183,10 @@ class XMLSecurityDSig
             }
             $inserted = false;
             $keyInfo = $baseDoc->createElementNS(self::XMLDSIGNS, $dsig_pfx.'KeyInfo');
+
+            if(isset($options['key_info_id'])) {
+                $keyInfo->setAttribute('Id', $options['key_info_id']);
+            }
 
             $query = "./{$prefixSearch}:Object";
             $nodeset = $xpath->query($query, $parentRef);
