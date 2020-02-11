@@ -51,6 +51,8 @@ use RobRichards\XMLSecLibs\Utils\XPath as XPath;
 class XMLSecurityDSig
 {
     const XMLDSIGNS = 'http://www.w3.org/2000/09/xmldsig#';
+    const XMLFILTER2 = 'http://www.w3.org/2002/06/xmldsig-filter2';
+
     const SHA1 = 'http://www.w3.org/2000/09/xmldsig#sha1';
     const SHA256 = 'http://www.w3.org/2001/04/xmlenc#sha256';
     const SHA384 = 'http://www.w3.org/2001/04/xmldsig-more#sha384';
@@ -62,6 +64,7 @@ class XMLSecurityDSig
     const EXC_C14N = 'http://www.w3.org/2001/10/xml-exc-c14n#';
     const EXC_C14N_COMMENTS = 'http://www.w3.org/2001/10/xml-exc-c14n#WithComments';
 
+    const PREFIX_FILTER2_SEARCH = 'xfilter2';
     const PREFIX_SEARCH = 'secdsig';
 
     const template = '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
@@ -399,6 +402,8 @@ class XMLSecurityDSig
         $data = $objData;
         $xpath = new DOMXPath($refNode->ownerDocument);
         $xpath->registerNamespace($this->prefixSearch, self::XMLDSIGNS);
+        $xpath->registerNamespace(self::PREFIX_FILTER2_SEARCH,self::XMLFILTER2 );
+
         $query = './'.$this->prefixSearch . ':Transforms/' . $this->prefixSearch . ':Transform';
         $nodelist = $xpath->query($query, $refNode);
         $canonicalMethod = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315';
@@ -455,21 +460,24 @@ class XMLSecurityDSig
 
                     $filterXpath = $this->createXPathObj($data);
 
-                    /** @var DOMElement $xpathNode */
-                    $xpathNode = $transform->firstChild;
+                    $xp = $xpath->query('./' . self::PREFIX_FILTER2_SEARCH . ':XPath', $transform);
 
-                    $operation = $xpathNode->getAttribute('Filter');
+                    if($xp->length === 1) {
+                        $xpathNode = $xp->item(0);
 
-                    if($operation === 'subtract') {
+                        $operation = $xpathNode->getAttribute('Filter');
 
-                        $filterQuery = $xpathNode->nodeValue;
+                        if($operation === 'subtract') {
 
-                        /** @var \DOMNodeList $nodelist */
-                        $nodelist = $filterXpath->query($filterQuery);
+                            $filterQuery = $xpathNode->nodeValue;
 
-                        if($nodelist->length == 1) {
-                            $node = $nodelist->item(0);
-                            $node->parentNode->removeChild($node);
+                            /** @var \DOMNodeList $nodelist */
+                            $nodelist = $filterXpath->query($filterQuery);
+
+                            if($nodelist->length == 1) {
+                                $node = $nodelist->item(0);
+                                $node->parentNode->removeChild($node);
+                            }
                         }
                     }
 
