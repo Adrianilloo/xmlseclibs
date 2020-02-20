@@ -853,9 +853,7 @@ class XMLSecurityDSig
                             if(! empty($transform['query'])) {
 
                                 $transNode->setAttribute('Algorithm', $transformAlgorithm);
-                                //$XPathNode = $this->createNewSignNode('XPath', $transform['query']);
                                 $XPathNode = $this->sigNode->ownerDocument->createElementNS(self::XMLFILTER2, self::PREFIX_FILTER2_SEARCH . ':XPath', $transform['query']);
-                                $XPathNode->setAttributeNS(self::XMLFILTER2, 'xmlns:' . self::PREFIX_FILTER2_SEARCH, $transformAlgorithm);
                                 $transNode->appendChild($XPathNode);
 
                                 if (! empty($transform['namespaces'])) {
