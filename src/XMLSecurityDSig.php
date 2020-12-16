@@ -11,7 +11,7 @@ use RobRichards\XMLSecLibs\Utils\XPath as XPath;
 /**
  * xmlseclibs.php
  *
- * Copyright (c) 2007-2017, Robert Richards <rrichards@cdatazone.org>.
+ * Copyright (c) 2007-2020, Robert Richards <rrichards@cdatazone.org>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -44,7 +44,7 @@ use RobRichards\XMLSecLibs\Utils\XPath as XPath;
  * POSSIBILITY OF SUCH DAMAGE.
  *
  * @author    Robert Richards <rrichards@cdatazone.org>
- * @copyright 2007-2017 Robert Richards <rrichards@cdatazone.org>
+ * @copyright 2007-2020 Robert Richards <rrichards@cdatazone.org>
  * @license   http://www.opensource.org/licenses/bsd-license.php  BSD License
  */
 
@@ -214,6 +214,11 @@ class XMLSecurityDSig
             $query = ".//{$this->prefixSearch}:Signature";
             $nodeset = $xpath->query($query, $objDoc);
             $this->sigNode = $nodeset->item($pos);
+            $query = "./secdsig:SignedInfo";
+            $nodeset = $xpath->query($query, $this->sigNode);
+            if ($nodeset->length > 1) {
+                throw new Exception("Invalid structure - Too many SignedInfo elements found");
+            }
             return $this->sigNode;
         }
         return null;
@@ -323,13 +328,28 @@ class XMLSecurityDSig
             $xpath = $this->getXPathObj();
             $query = "./{$this->prefixSearch}:SignedInfo";
             $nodeset = $xpath->query($query, $this->sigNode);
+            if ($nodeset->length > 1) {
+                throw new Exception("Invalid structure - Too many SignedInfo elements found");
+            }
             if ($signInfoNode = $nodeset->item(0)) {
                 $query = "./{$this->prefixSearch}:CanonicalizationMethod";
                 $nodeset = $xpath->query($query, $signInfoNode);
+                $prefixList = null;
                 if ($canonNode = $nodeset->item(0)) {
                     $canonicalmethod = $canonNode->getAttribute('Algorithm');
+                    foreach ($canonNode->childNodes as $node)
+                    {
+                        if ($node->localName == 'InclusiveNamespaces') {
+                            if ($pfx = $node->getAttribute('PrefixList')) {
+                                $arpfx = array_filter(explode(' ', $pfx));
+                                if (count($arpfx) > 0) {
+                                    $prefixList = array_merge($prefixList ? $prefixList : array(), $arpfx);
+                                }
+                            }
+                        }
+                    }
                 }
-                $this->signedInfo = $this->canonicalizeData($signInfoNode, $canonicalmethod);
+                $this->signedInfo = $this->canonicalizeData($signInfoNode, $canonicalmethod, null, $prefixList);
                 return $this->signedInfo;
             }
         }
@@ -533,7 +553,7 @@ class XMLSecurityDSig
                         if ($node->localName == 'XPath') {
                             $arXPath = array();
                             $arXPath['query'] = '(.//. | .//@* | .//namespace::*)['.$node->nodeValue.']';
-                            $arXpath['namespaces'] = array();
+                            $arXPath['namespaces'] = array();
                             $nslist = $xpath->query('./namespace::*', $node);
                             foreach ($nslist AS $nsnode) {
                                 if ($nsnode->localName != "xml") {
@@ -651,15 +671,15 @@ class XMLSecurityDSig
 
                     $xPath = new DOMXPath($refNode->ownerDocument);
                     if ($this->idNS && is_array($this->idNS)) {
-                        foreach ($this->idNS AS $nspf => $ns) {
+                        foreach ($this->idNS as $nspf => $ns) {
                             $xPath->registerNamespace($nspf, $ns);
                         }
                     }
                     $iDlist = '@Id="'.XPath::filterAttrValue($identifier, XPath::DOUBLE_QUOTE).'"';
                     if (is_array($this->idKeys)) {
-                        foreach ($this->idKeys AS $idKey) {
+                        foreach ($this->idKeys as $idKey) {
                             $iDlist .= " or @".XPath::filterAttrName($idKey).'="'.
-                                XPATH::filterAttrValue($identifier, XPAth::DOUBLE_QUOTE).'"';
+                                XPath::filterAttrValue($identifier, XPath::DOUBLE_QUOTE).'"';
                         }
                     }
                     $query = '//*['.$iDlist.']';
@@ -719,7 +739,7 @@ class XMLSecurityDSig
         $refids = array();
 
         $xpath = $this->getXPathObj();
-        $query = "./{$this->prefixSearch}:SignedInfo/{$this->prefixSearch}:Reference";
+        $query = "./{$this->prefixSearch}:SignedInfo[1]/{$this->prefixSearch}:Reference";
         $nodeset = $xpath->query($query, $this->sigNode);
         if ($nodeset->length == 0) {
             throw new Exception("Reference nodes not found");
@@ -743,7 +763,7 @@ class XMLSecurityDSig
 //            }
 //        }
         $xpath = $this->getXPathObj();
-        $query = "./{$this->prefixSearch}:SignedInfo/{$this->prefixSearch}:Reference";
+        $query = "./{$this->prefixSearch}:SignedInfo[1]/{$this->prefixSearch}:Reference";
         $nodeset = $xpath->query($query, $this->sigNode);
         if ($nodeset->length == 0) {
             throw new Exception("Reference nodes not found");
